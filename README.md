@@ -1,10 +1,6 @@
-# Scalable and Accurate Cross-Camera Vehicle Trajectory Recovery
+# The official implementation of Strick
 
 ![Python 3.9.16](https://img.shields.io/badge/python-3.9.16-green.svg?style=plastic)
-
-This is the code for the paper:
-
-- Scalable and Accurate Cross-Camera Vehicle Trajectory Recovery.
 
 ## Requirements
 
@@ -77,8 +73,7 @@ Or after setting the corresponding configuration file, you can run
 > python test_cluster.py
 
 ## Dataset
-
-The data used in this paper includes the road network information and snapshot-related features information. Please download from our [repository](https://drive.google.com/drive/folders/1YEwxgkDH0sWR2yMpM2jeb7C2DpknUqqU?usp=sharing).
+The data includes the road network information and snapshot-related information. Please download from our [repository](https://drive.google.com/drive/folders/1YEwxgkDH0sWR2yMpM2jeb7C2DpknUqqU?usp=sharing).
 
 
 <!-- ## Citation

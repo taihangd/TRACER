@@ -33,8 +33,8 @@ input_feat_dim: 2048
 time_feat_dim: 64
 time_scaling_factor: 0.1
 mapped_feat_dim: 2048
-model_path: "checkpoints/carla_self_train/"
-res_path: "output/carla_self_train/"
+model_path: "checkpoints/carla/"
+res_path: "output/carla/"
 traj_res_file: "traj_res_st.pkl"
 record_feat_file: "record_feats.pkl"
 preload_gpu_flag: False
@@ -56,7 +56,7 @@ beta2: 0.999
 weight_decay: 0.00001
 temperature: 0.2 # instance-wise loss
 
-loss_pic_path: "pics/carla_self_train/"
+loss_pic_path: "pics/carla/"
 loss_pic_file: "train_loss.png"
 
 # if add the plate information

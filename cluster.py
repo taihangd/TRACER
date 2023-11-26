@@ -1,9 +1,9 @@
-import numpy as np
 import math
 import time
+import faiss
+import numpy as np
 from collections import Counter
 from tqdm import tqdm
-import faiss
 
 
 def normalize(feature):
@@ -89,7 +89,7 @@ class FastIncCluster:
 
         st_feat, car_feat, plate_feat = feats
         record_num = len(st_feat)
-        if normalization: # have replaced the None type with the all-zero array
+        if normalization: 
             faiss.normalize_L2(st_feat)
             faiss.normalize_L2(car_feat)
             faiss.normalize_L2(plate_feat)

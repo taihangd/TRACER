@@ -126,7 +126,7 @@ def gen_cid_to_rid_correspondence(cid_to_rid_file, cameras, road_graph):
 
 
 if __name__ == "__main__":
-    dataset_config_file = "./config/urban_vehicle.yaml"
+    dataset_config_file = "./config/uv.yaml"
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
     for k, v in config.items():

@@ -49,10 +49,10 @@ def extract_feat(loader, model, device, cam_vec_idx_dict, road_graph_node_emb):
 
 
 if __name__ == "__main__":
-    # dataset_config_file = "./config/uv_comparison_cluster.yaml"
+    dataset_config_file = "./config/uv_comparison_cluster.yaml"
     # dataset_config_file = "./config/uv-75_comparison_cluster.yaml"
     # dataset_config_file = "./config/uv-z_comparison_cluster.yaml"
-    dataset_config_file = "./config/carla_comparison_cluster.yaml"
+    # dataset_config_file = "./config/carla_comparison_cluster.yaml"
 
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)

@@ -1,13 +1,14 @@
-import numpy as np
 import math
 import time
-from tqdm import tqdm
-from collections import defaultdict
 import logging
 import faiss
 import random
+import numpy as np
+from tqdm import tqdm
+from collections import defaultdict
 from sklearn.cluster import HDBSCAN
 import sklearn.random_projection as rp
+
 
 #%% the MMVC+ clustering algorithm
 def normalize(feature):
@@ -242,7 +243,8 @@ def parallel_dbscan(snapshot_feats, cfg=None):
     feat_rp = proj_trans.fit_transform(snapshot_feats)
     print(feat_rp.shape)
 
-    # original pdbscan library only support dimensionality 2 - 20, now I have set DBSCAN_MIN_DIMS/DBSCAN_MAX_DIMS to 2/200, then rebuild the dbscan library
+    # original pdbscan library only support dimensionality 2 - 20, 
+    # now set DBSCAN_MIN_DIMS/DBSCAN_MAX_DIMS to 2/200, then rebuild the dbscan library
     from dbscan import DBSCAN
     labels, core_samples_mask = DBSCAN(feat_rp, eps=eps, min_samples=min_samples)
 

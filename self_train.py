@@ -244,10 +244,10 @@ def train(all_pairs_list, snapshot_info_list,
 
 if __name__ == "__main__":
     # configuration file setting
-    # dataset_config_file = "./config/uv-z.yaml"
+    dataset_config_file = "./config/uv.yaml"
     # dataset_config_file = "./config/uv-75.yaml"
-    # dataset_config_file = "./config/uv.yaml"
-    dataset_config_file = "./config/carla.yaml"
+    # dataset_config_file = "./config/uv-z.yaml"
+    # dataset_config_file = "./config/carla.yaml"
     
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
