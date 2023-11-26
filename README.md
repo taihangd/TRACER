@@ -53,11 +53,10 @@ There are the configuration files in "./config" folder, where one can edit and s
 - self_train.py
   - network self-training module.
 - self_train_test.py
-  - algorithm testing module by self-supervision.
-- train.py
-  - network training module.
-- test.py
   - algorithm testing module.
+- test_cluster.py
+  - for for testing clustering algorithms.
+
 
 ## Cache Data Preparation
 Before training and testing, run the .py file in the "./cache_data" to generation cache data. 
@@ -67,20 +66,23 @@ After setting the configuration, to start self-training, simply run
 
 > python self_train.py
 
-After setting the configuration, to start training, simply run
-
-> python train.py
-
 ## Testing
-Once the training is completed, there will be a saved model in the "checkpoints" specified in the configuration file. To test the self-trained model, run
+Once the training is completed, there will be a saved model in the "checkpoints" specified in the configuration file. 
+To test the self-trained model, run
 
 > python self_train_test.py
 
-To test the self-trained model, run
+Or after setting the corresponding configuration file, you can run
 
-> python test.py
+> python test_cluster.py
 
 ## Dataset
 
-The data used in this study is in the "data" folder, including the road network information and snapshot-related features information.
+The data used in this paper includes the road network information and snapshot-related features information. Please download from our [repository](https://drive.google.com/drive/folders/1YEwxgkDH0sWR2yMpM2jeb7C2DpknUqqU?usp=sharing).
 
+
+<!-- ## Citation
+If you find this repository useful in your research, please consider citing the following paper:
+```
+
+``` -->
