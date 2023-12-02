@@ -94,6 +94,7 @@ hdbscan:
   random_proj_random_state: 0
   min_cluster_size: 2
   min_samples: 2
+  cluster_selection_epsilon: 0.0
   max_cluster_size: Null
   metric: 'euclidean'
   algorithm: 'auto'

@@ -43,7 +43,7 @@ There are the configuration files in "./config" folder, where one can edit and s
 - modules folder
   - The network structure and loss function files.
 - cluster.py
-  - Fast Incremental Clustering algorithm.
+  - our incremental clustering algorithm.
 - eval.py
   - evaluation module.
 - self_train.py
@@ -51,11 +51,11 @@ There are the configuration files in "./config" folder, where one can edit and s
 - self_train_test.py
   - algorithm testing module.
 - test_cluster.py
-  - for for testing clustering algorithms.
+  - for testing clustering algorithms.
 
 
 ## Cache Data Preparation
-Before training and testing, run the .py file in the "./cache_data" to generation cache data. 
+Before training and testing, run the .py file in the "./cache_data" to generate cache data. 
 
 ## Training
 After setting the configuration, to start self-training, simply run
@@ -73,7 +73,7 @@ Or after setting the corresponding configuration file, you can run
 > python test_cluster.py
 
 ## Dataset
-The data includes the road network information and snapshot-related information. Please download from our [repository](https://drive.google.com/drive/folders/1YEwxgkDH0sWR2yMpM2jeb7C2DpknUqqU?usp=sharing).
+Please download from our [repository](https://terabox.com/s/1BUll52ghFXuseGRaev-ElA). 
 
 
 <!-- ## Citation

@@ -262,6 +262,7 @@ def HDBSCAN_cluster(snapshot_feats, cfg=None):
         random_state = cfg.hdbscan['random_proj_random_state']
         min_cluster_size = cfg.hdbscan['min_cluster_size']
         min_samples = cfg.hdbscan['min_samples']
+        cluster_selection_epsilon = cfg.hdbscan['cluster_selection_epsilon']
         max_cluster_size = cfg.hdbscan['max_cluster_size']
         metric = cfg.hdbscan['metric']
         algorithm = cfg.hdbscan['algorithm']
@@ -273,6 +274,7 @@ def HDBSCAN_cluster(snapshot_feats, cfg=None):
         random_state = 0
         min_cluster_size = 2
         min_samples = 1
+        cluster_selection_epsilon = 0.0
         max_cluster_size = None
         metric = 'euclidean'
         algorithm = 'auto'
@@ -287,7 +289,8 @@ def HDBSCAN_cluster(snapshot_feats, cfg=None):
     print(feat_rp.shape)
 
     # HDBSCAN algorithm
-    hdbscan_cluster = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples,
+    hdbscan_cluster = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples, 
+                              cluster_selection_epsilon=cluster_selection_epsilon, 
                               max_cluster_size=max_cluster_size, metric=metric, alpha=1.0, 
                               algorithm=algorithm, leaf_size=leaf_size, 
                               cluster_selection_method=cluster_selection_method)
