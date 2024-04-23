@@ -59,67 +59,10 @@ temperature: 0.2 # instance-wise loss
 loss_pic_path: "pics/carla/"
 loss_pic_file: "train_loss.png"
 
-# if load the trained model
-load_model: True
-
 # if add the plate information
 use_plate: False
 
-
-# clustering algorithms setting
-select_cluster: 'Strick' # 'K-Means', 'agglomerative', 'HDBSCAN', 'PDBSCAN', 'MMVC', 'Strick'
-
-kmeas_missing_data: # kmeans for missing data
-  n_clusters: 1000
-  max_iterations: 3
-  min_dist_change: 10000
-  resolve_empty: 'singleton'
-  ngpu: 1
-  weights: [0.3, 0.7, 0.0]
-  feat_dims: [4096]
-  topK: 1
-  query_num: 16384
-  normalization: True
-  norm_init: True
-
-aggl_cluster_missing_data: # agglomerative clustering for missing data
-  ngpu: 1
-  weights: [0.3, 0.7, 0.0]
-  feat_dims: [4096]
-  topK: 2047
-  query_num: 16384
-  normalization: True
-  thres: 0.8
-
-hdbscan:
-  random_proj_n_components: 20
-  random_proj_dense_output: True
-  random_proj_random_state: 0
-  min_cluster_size: 300
-  min_samples: 2
-  cluster_selection_epsilon: 0.4
-  max_cluster_size: 10000
-  metric: 'euclidean'
-  algorithm: 'auto'
-  leaf_size: 400
-  cluster_selection_method: "eom"
-
-pdbscan:
-  random_proj_n_components: 80
-  random_proj_dense_output: True
-  random_proj_random_state: 0
-  min_samples: 1
-  eps: 0.73
-
-sig_cluster:
-  feat_dims: [2048, 2048, 2048]
-  ngpu: 1
-  useFloat16: False
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-
+# clustering options
 inc_cluster:
   feat_dims: [4096, 4096, 4096]
   ngpu: 1
@@ -130,62 +73,6 @@ inc_cluster:
   query_num: 2048
   adj_pt_ratio: 0.35
   spher_distrib_coeff: 0.85
-
-# module ablation experiment
-JRRQ:
-  feat_dims: [4096, 4096, 4096]
-  ngpu: 1
-  useFloat16: False
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-
-CDSC:
-  feat_dims: [2048, 2048, 2048]
-  ngpu: 1
-  useFloat16: True
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-  adj_pt_ratio: 0.35
-  spher_distrib_coeff: 0.85
-
-CCIU:
-  feat_dims: [2048, 2048, 2048]
-  ngpu: 1
-  useFloat16: False
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-
-JRRQ_CDSC:
-  feat_dims: [4096, 4096, 4096]
-  ngpu: 1
-  useFloat16: True
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-  adj_pt_ratio: 0.35
-  spher_distrib_coeff: 0.85
-
-CDSC_CCIU:
-  feat_dims: [2048, 2048, 2048]
-  ngpu: 1
-  useFloat16: True
-  weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
-  topK: 2047
-  query_num: 2048
-  adj_pt_ratio: 0.35
-  spher_distrib_coeff: 0.85
-
-# if save the records with results
-save_record: False
-
 
 # graph node embedding
 node2vec:

@@ -23,7 +23,7 @@ max_time: 30000
 lamda_dict_loss: 1
 lamda_proto_loss: 1
 start_epoch: 0
-epochs: 20
+epochs: 10
 test_epoch: 3
 warmup_epoch: 0
 
@@ -58,6 +58,9 @@ temperature: 0.2 # instance-wise loss
 
 loss_pic_path: "pics/uv-z/"
 loss_pic_file: "train_loss.png"
+
+# if load the trained model
+load_model: True
 
 # if add the plate information
 use_plate: False
@@ -113,7 +116,7 @@ sig_cluster:
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.85
+  sim_thres: 0.84
   topK: 128
   query_num: 131072
 
@@ -126,7 +129,62 @@ inc_cluster:
   topK: 128
   query_num: 131072
   adj_pt_ratio: 0.5
-  spher_distrib_coeff: 1.0
+  spher_distrib_coeff: 0.8
+
+# module ablation experiment
+JRRQ:
+  feat_dims: [768, 512, 256]
+  ngpu: 1
+  useFloat16: False
+  weights: [0.1, 0.1, 0.8]
+  sim_thres: 0.85
+  topK: 128
+  query_num: 131072
+
+CDSC:
+  feat_dims: [256, 256, 256]
+  ngpu: 1
+  useFloat16: False
+  weights: [0.1, 0.1, 0.8]
+  sim_thres: 0.82
+  topK: 128
+  query_num: 131072
+  adj_pt_ratio: 0.5
+  spher_distrib_coeff: 0.8
+
+CCIU:
+  feat_dims: [256, 256, 256]
+  ngpu: 1
+  useFloat16: False
+  weights: [0.1, 0.1, 0.8]
+  sim_thres: 0.85
+  topK: 128
+  query_num: 131072
+
+JRRQ_CDSC:
+  feat_dims: [768, 512, 256]
+  ngpu: 1
+  useFloat16: False
+  weights: [0.1, 0.1, 0.8]
+  sim_thres: 0.82
+  topK: 128
+  query_num: 131072
+  adj_pt_ratio: 0.5
+  spher_distrib_coeff: 0.8
+
+CDSC_CCIU:
+  feat_dims: [256, 256, 256]
+  ngpu: 1
+  useFloat16: False
+  weights: [0.1, 0.1, 0.8]
+  sim_thres: 0.82
+  topK: 128
+  query_num: 131072
+  adj_pt_ratio: 0.5
+  spher_distrib_coeff: 0.8
+
+# if save the records with results
+save_record: False
 
 
 # graph node embedding

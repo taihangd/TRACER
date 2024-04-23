@@ -33,8 +33,8 @@ input_feat_dim: 256
 time_feat_dim: 64
 time_scaling_factor: 0.01
 mapped_feat_dim: 256
-model_path: "checkpoints/uv/"
-res_path: "output/uv/"
+model_path: "checkpoints/uv-z_train/"
+res_path: "output/uv-z_train/"
 traj_res_file: "traj_res_st.pkl"
 record_feat_file: "record_feats.pkl"
 preload_gpu_flag: True
@@ -56,27 +56,27 @@ beta2: 0.999
 weight_decay: 0.00001
 temperature: 0.2 # instance-wise loss
 
-loss_pic_path: "pics/uv/"
+loss_pic_path: "pics/uv-z_train/"
 loss_pic_file: "train_loss.png"
 
 # if load the trained model
 load_model: True
 
 # if add the plate information
-use_plate: True
+use_plate: False
 
 
 # clustering algorithms setting
 select_cluster: 'Strick' # 'K-Means', 'agglomerative', 'HDBSCAN', 'PDBSCAN', 'MMVC', 'Strick'
 
 kmeas_missing_data: # kmeans for missing data
-  n_clusters: 940000
+  n_clusters: 400000
   max_iterations: 3
   min_dist_change: 10000
   resolve_empty: 'singleton'
   ngpu: 1
   weights: [0.1, 0.1, 0.8]
-  feat_dims: [768, 512]
+  feat_dims: [512]
   topK: 1
   query_num: 131072
   normalization: True
@@ -85,11 +85,11 @@ kmeas_missing_data: # kmeans for missing data
 aggl_cluster_missing_data: # agglomerative clustering for missing data
   ngpu: 1
   weights: [0.1, 0.1, 0.8]
-  feat_dims: [768, 512]
+  feat_dims: [512]
   topK: 128
   query_num: 131072
   normalization: True
-  thres: 0.92
+  thres: 0.87
 
 hdbscan:
   random_proj_n_components: 15
@@ -98,7 +98,7 @@ hdbscan:
   min_cluster_size: 2
   min_samples: 2
   cluster_selection_epsilon: 0.0
-  max_cluster_size: Null
+  max_cluster_size: 100
   metric: 'euclidean'
   algorithm: 'auto'
   leaf_size: 40
@@ -109,14 +109,14 @@ pdbscan:
   random_proj_dense_output: True
   random_proj_random_state: 0
   min_samples: 1
-  eps: 0.45
+  eps: 0.3
 
 sig_cluster:
   feat_dims: [256, 256, 256]
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.9
+  sim_thres: 0.84
   topK: 128
   query_num: 131072
 
@@ -125,11 +125,11 @@ inc_cluster:
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.87
+  sim_thres: 0.82
   topK: 128
   query_num: 131072
   adj_pt_ratio: 0.5
-  spher_distrib_coeff: 1.0
+  spher_distrib_coeff: 0.8
 
 # module ablation experiment
 JRRQ:
@@ -137,7 +137,7 @@ JRRQ:
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.9
+  sim_thres: 0.85
   topK: 128
   query_num: 131072
 
@@ -146,18 +146,18 @@ CDSC:
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.87
+  sim_thres: 0.82
   topK: 128
   query_num: 131072
   adj_pt_ratio: 0.5
-  spher_distrib_coeff: 1.0
+  spher_distrib_coeff: 0.8
 
 CCIU:
   feat_dims: [256, 256, 256]
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.9
+  sim_thres: 0.85
   topK: 128
   query_num: 131072
 
@@ -166,22 +166,22 @@ JRRQ_CDSC:
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.87
+  sim_thres: 0.82
   topK: 128
   query_num: 131072
   adj_pt_ratio: 0.5
-  spher_distrib_coeff: 1.0
+  spher_distrib_coeff: 0.8
 
 CDSC_CCIU:
   feat_dims: [256, 256, 256]
   ngpu: 1
   useFloat16: False
   weights: [0.1, 0.1, 0.8]
-  sim_thres: 0.87
+  sim_thres: 0.82
   topK: 128
   query_num: 131072
   adj_pt_ratio: 0.5
-  spher_distrib_coeff: 1.0
+  spher_distrib_coeff: 0.8
 
 # if save the records with results
 save_record: False

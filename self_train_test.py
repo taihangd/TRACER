@@ -299,10 +299,10 @@ def update_train(model, all_pairs_list,
 
 
 if __name__ == "__main__":
-    dataset_config_file = "./config/uv.yaml"
-    # dataset_config_file = "./config/uv-75.yaml"
-    # dataset_config_file = "./config/uv-z.yaml"
-    # dataset_config_file = "./config/carla.yaml"
+    dataset_config_file = "./config/uv_self_train.yaml"
+    # dataset_config_file = "./config/uv-75_self_train.yaml"
+    # dataset_config_file = "./config/uv-z_self_train.yaml"
+    # dataset_config_file = "./config/carla_self_train.yaml"
 
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
@@ -425,7 +425,7 @@ if __name__ == "__main__":
         global traj_rec_cluster_total_time
         global traj_rec_extract_feat_total_time
         # fast incremental clustering
-        cluster = FastIncCluster(args.inc_cluster['feat_dims'], args.inc_cluster['ngpu'], args.inc_cluster['useFloat16']) # initialization
+        cluster = IncCluster(args.inc_cluster['feat_dims'], args.inc_cluster['ngpu'], args.inc_cluster['useFloat16']) # initialization
         cumul_removed_feat_num = 0 # to record the number of removal features that are too far apart
         f_ids = [[], []]
         id_dict = {}

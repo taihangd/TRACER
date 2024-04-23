@@ -56,7 +56,7 @@ class FaissFlatSearcher:
     def reset(self):
         self.index.reset()
 
-class FastIncCluster:
+class IncCluster:
     def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
         self.searchers = {i: FaissFlatSearcher(ngpu, i, useFloat16) for i in set(feature_dims)}
         self.f_dims = feature_dims
@@ -269,3 +269,508 @@ class FastIncCluster:
                            pres_record_num[2] + record_num]
 
         return f_ids, cids, id_dict, cfs, curr_label, pres_record_num
+
+class FastIncCluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.searchers = {i: FaissFlatSearcher(ngpu, i, useFloat16) for i in set(feature_dims)}
+        self.f_dims = feature_dims
+
+    def fit(
+        self,
+        cumul_removed_feat_num,
+        feats,
+        cids,
+        weights=[1],
+        sim_thres=0.88,
+        adj_pt_ratio=0.5,
+        spher_distrib_coeff=1,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        id_dict={},
+        css={},
+        cf_means={},
+        cf_means_no_norm={},
+        curr_label=0,
+        pres_record_num=[0, 0, 0],
+    ):
+        snapshots_retrieval_time = time.time()
+        if isinstance(weights, float) or isinstance(weights, int):
+            weights = [weights] * len(self.f_dims)
+        if isinstance(topK, int):
+            topK = [topK] * len(self.f_dims)
+        else:
+            assert len(topK) == len(self.f_dims)
+
+        st_feat, car_feat, plate_feat = feats
+        record_num = len(st_feat)
+        if normalization: # have replaced the None type with the all-zero array
+            faiss.normalize_L2(st_feat)
+            faiss.normalize_L2(car_feat)
+            faiss.normalize_L2(plate_feat)
+            print("features normalization")
+        
+        # generate joint representation features
+        weight_cumsum = np.cumsum(weights)
+        norm_weight_st, norm_weight_vis = math.sqrt(weight_cumsum[0] / (weight_cumsum[0] + weights[1])), math.sqrt(weights[1] / (weight_cumsum[0] + weights[1]))
+        norm_weight_st_vis, norm_weight_plate = math.sqrt(weight_cumsum[1] / (weight_cumsum[1] + weights[2])), math.sqrt(weights[2] / (weight_cumsum[1] + weights[2]))
+        st_vis_feat = np.concatenate((st_feat * norm_weight_st, car_feat * norm_weight_vis), axis=1)
+        
+        st_vis_feat_idx_list = list(range(len(plate_feat)))
+        st_vis_plate_feat_idx_list = [i for i, feat in enumerate(plate_feat) if feat is not None and not np.all(feat == 0)]
+        st_vis_plate_feat = np.concatenate((st_vis_feat * norm_weight_st_vis, plate_feat * norm_weight_plate), axis=-1)
+        st_vis_plate_feat = st_vis_plate_feat[st_vis_plate_feat_idx_list, :]
+
+        cancat_feats = [st_vis_plate_feat, st_vis_feat]
+        cancat_feats_orig_idx_list = [st_vis_plate_feat_idx_list, st_vis_feat_idx_list]
+        st_vis_plate_feat_idx_list = [i + pres_record_num[2] for i in st_vis_plate_feat_idx_list]
+        st_vis_feat_idx_list = [i + pres_record_num[2] for i in st_vis_feat_idx_list]
+        cancat_feats_idx_list = [st_vis_plate_feat_idx_list, st_vis_feat_idx_list]
+
+        print("search topk")
+        for i, idx_list in enumerate(cancat_feats_idx_list):
+            f_ids[i] += idx_list
+
+        topk_scores_list = []
+        topk_idxs_list = []
+        for f, dim, topk in zip(cancat_feats, self.f_dims, topK): # for each modal
+            if len(f) == 0:
+                topk_scores_list.append([])
+                topk_idxs_list.append([])
+                continue
+            topk_scores, topk_idxs = self.searchers[dim].search_by_topk_by_blocks(f, f, topk, query_num)
+            topk_scores_list.append(topk_scores)
+            topk_idxs_list.append(topk_idxs + cumul_removed_feat_num)
+        f_topks = [
+            [
+                [
+                    f_id[curr_topk_idx]
+                    for curr_topk_idx in curr_topk_idxs
+                    if curr_topk_idx < i + pres_record_num[modal_idx]
+                ]
+                for i, curr_topk_idxs in enumerate(topk_idxs)
+            ]
+            for modal_idx, (topk_idxs, f_id) in enumerate(zip(topk_idxs_list, f_ids))
+        ]
+        f_topks_score = [
+            [
+                [
+                    curr_topk_scores[curr_topk_idxs_idx]
+                    for curr_topk_idxs_idx, curr_topk_idx in enumerate(curr_topk_idxs)
+                    if curr_topk_idx < i + pres_record_num[modal_idx]
+                ]
+                for i, (curr_topk_idxs, curr_topk_scores) in enumerate(zip(topk_idxs, topk_scores))
+            ]
+            for modal_idx, (topk_idxs, topk_scores) in enumerate(zip(topk_idxs_list, topk_scores_list))
+        ]
+
+        # fusion similarity
+        fusion_sim_time = time.time()
+        topks = [[] for _ in range(record_num)]
+        topks_score = [[] for _ in range(record_num)]
+        # for the indexes combination, the features with plate have the higher assignment priority 
+        for f_id, f_topk, f_topk_score in zip(cancat_feats_orig_idx_list, f_topks, f_topks_score):
+            for i, topk, topk_score in zip(f_id, f_topk, f_topk_score):
+                intersection_topk = set(topks[i]).intersection(topk)
+                for j, k in enumerate(topk):
+                    if k not in intersection_topk:
+                        topks[i].append(k)
+                        topks_score[i].append(topk_score[j])
+        snapshots_retrieval_time = time.time() - snapshots_retrieval_time # record the similarity computation time
+        print('fusion similarity consuming time: {}'.format(time.time() - fusion_sim_time))
+        
+        # clusters generation
+        print("clusters generation")
+        gen_cluster_time = time.time()
+        sim_calc_time = 0
+        organize_topk_time = 0
+        closeness_calc_time = 0
+        cluster_sim_calc_time = 0
+        statistics_update_time = 0
+        sim_select_num = 0
+        sim_computation_num = 0
+        connect_flag_table = [np.array(topk_score) > sim_thres for topk_score in topks_score]
+        data = [[a, b, c] if c is not None and not np.all(c == 0) else [a, b, None] for a, b, c in zip(st_feat, car_feat, plate_feat)]
+        for record_idx1, connect_flag1 in tqdm(enumerate(connect_flag_table)):
+            start_sim_calc_time = time.time()
+            record_idx1_total_seq = record_idx1 + pres_record_num[2]
+            connect_record_num = np.sum(connect_flag1 == True)
+            if connect_record_num == 0:
+                cids[record_idx1_total_seq] = curr_label
+                id_dict[curr_label] = [record_idx1_total_seq]
+                css[curr_label] = [0 if j is None else 1 for j in data[record_idx1]]
+                cf_means[curr_label] = data[record_idx1]
+                cf_means_no_norm[curr_label] = data[record_idx1]
+                curr_label += 1
+                continue
+            
+            start_organize_topk_time = time.time()
+            connect_record_idx_array = np.argwhere(connect_flag1)
+            cid_sim_dict = defaultdict(list)
+            for connect_record_idx in connect_record_idx_array[:, 0]:
+                record_idx2 = topks[record_idx1][connect_record_idx]
+                curr_sim = topks_score[record_idx1][connect_record_idx]
+                topk_cid = cids[record_idx2]
+                cid_sim_dict[topk_cid].append(curr_sim)
+            organize_topk_time += time.time() - start_organize_topk_time
+
+            start_closeness_calc_time = time.time()
+            select_cid_list = []
+            quick_calc_select_cid_list = []
+            for cid, sim_list in cid_sim_dict.items():
+                closeness = float(len(sim_list)) / len(id_dict[cid])
+                if closeness > spher_distrib_coeff:
+                    quick_calc_select_cid_list.append(cid)
+                elif closeness > adj_pt_ratio:
+                    select_cid_list.append(cid)
+            closeness_calc_time += time.time() - start_closeness_calc_time
+            # print('the number of the selected cid list is: {}'.format(len(select_cid_list)))
+            # print('the number of the quick calculation selected cid list is: {}'.format(len(quick_calc_select_cid_list)))
+            # print(f'current snapshot similarity computation times: {len(select_cid_list) - len(quick_calc_select_cid_list)}')
+
+            start_cluster_sim_calc_time = time.time()
+            max_sim = 0
+            final_cid = -1
+            for cid in quick_calc_select_cid_list:
+                curr_sim = max(cid_sim_dict[cid])
+                # curr_sim = sum(cid_sim_dict[cid]) / len(cid_sim_dict[cid])
+                if curr_sim > max_sim:
+                    max_sim = curr_sim
+                    final_cid = cid
+            for cid in select_cid_list:
+                w_total = 0
+                curr_sim = 0
+                for w, a, b in zip(weights, data[record_idx1], cf_means[cid]):
+                    if a is not None and b is not None:
+                        curr_sim += a @ b * w
+                        w_total += w
+                curr_sim /= w_total
+                if curr_sim > max_sim:
+                    max_sim = curr_sim
+                    final_cid = cid
+            cluster_sim_calc_time += time.time() - start_cluster_sim_calc_time
+
+            sim_calc_time += time.time() - start_sim_calc_time
+            sim_select_num += len(quick_calc_select_cid_list)
+            sim_computation_num += len(select_cid_list)
+
+            start_statistics_update_time = time.time()
+            if max_sim > sim_thres:
+                cids[record_idx1_total_seq] = final_cid
+                id_dict[final_cid].append(record_idx1_total_seq)
+                cs = css[final_cid]
+                cf_mean = cf_means[final_cid]
+                cf_mean_no_norm = cf_means_no_norm[final_cid]
+                for j, k in enumerate(data[record_idx1]):
+                    if k is not None:
+                        if cs[j]:
+                            inc_mean_weight = cs[j] / (cs[j] + 1)
+                            cs[j] += 1
+                            cf_mean_no_norm[j] = cf_mean_no_norm[j] * inc_mean_weight + k * (1 - inc_mean_weight)
+                            cf_mean[j] = normalize(cf_mean_no_norm[j])
+                        else:
+                            cs[j] = 1
+                            cf_mean[j] = k
+                            cf_mean_no_norm[j] = k
+            else:
+                cids[record_idx1_total_seq] = curr_label
+                id_dict[curr_label] = [record_idx1_total_seq]
+                css[curr_label] = [0 if j is None else 1 for j in data[record_idx1]]
+                cf_means[curr_label] = data[record_idx1]
+                cf_means_no_norm[curr_label] = data[record_idx1]
+                curr_label += 1
+            statistics_update_time = time.time() - start_statistics_update_time + statistics_update_time
+        
+        gen_cluster_time = time.time() - gen_cluster_time
+
+        # output the running time of each module
+        print(f'snapshots retrieval time: {snapshots_retrieval_time}')
+        print(f'cluster generation total cosuming time: {gen_cluster_time}')
+        print(f'similarity computation total cosuming time: {sim_calc_time}')
+        print(f'topk organization total cosuming time: {organize_topk_time}')
+        print(f'closeness computation total cosuming time: {closeness_calc_time}')
+        print(f'cluster similarity computation total cosuming time: {cluster_sim_calc_time}')
+        print(f'cluster statistics update total cosuming time: {statistics_update_time}')
+        print(f'total similarity computation times: {sim_computation_num}')
+        print(f'total selected times: {sim_select_num}')
+        print(f'the number of snapshots is: {len(data)}')
+        print("clustering finished!")
+
+        # update the number of previous snapshots
+        pres_record_num = [pres_record_num[0] + len(st_vis_plate_feat_idx_list), 
+                           pres_record_num[1] + len(st_vis_feat_idx_list), 
+                           pres_record_num[2] + record_num]
+
+        return f_ids, cids, id_dict, css, cf_means, cf_means_no_norm, curr_label, pres_record_num
+
+class FastIncClusterRetrieval:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.searchers = {i: FaissFlatSearcher(ngpu, i, useFloat16) for i in set(feature_dims)}
+        self.f_dims = feature_dims
+
+    def fit(
+        self,
+        cumul_removed_feat_num,
+        feats,
+        weights=[1],
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        pres_record_num=[0, 0, 0],
+    ):
+        snapshots_retrieval_time = time.time()
+        if isinstance(weights, float) or isinstance(weights, int):
+            weights = [weights] * len(self.f_dims)
+        else:
+            assert len(weights) == len(self.f_dims)
+        if isinstance(topK, int):
+            topK = [topK] * len(self.f_dims)
+        else:
+            assert len(topK) == len(self.f_dims)
+
+        st_feat, car_feat, plate_feat = feats
+        record_num = len(st_feat)
+        if normalization: # have replaced the None type with the all-zero array
+            faiss.normalize_L2(st_feat)
+            faiss.normalize_L2(car_feat)
+            faiss.normalize_L2(plate_feat)
+            print("features normalization")
+        
+        # generate joint representation features
+        weight_cumsum = np.cumsum(weights)
+        norm_weight_st, norm_weight_vis = math.sqrt(weight_cumsum[0] / (weight_cumsum[0] + weights[1])), math.sqrt(weights[1] / (weight_cumsum[0] + weights[1]))
+        norm_weight_st_vis, norm_weight_plate = math.sqrt(weight_cumsum[1] / (weight_cumsum[1] + weights[2])), math.sqrt(weights[2] / (weight_cumsum[1] + weights[2]))
+        st_vis_feat = np.concatenate((st_feat * norm_weight_st, car_feat * norm_weight_vis), axis=1)
+        
+        st_vis_feat_idx_list = list(range(len(plate_feat)))
+        st_vis_plate_feat_idx_list = [i for i, feat in enumerate(plate_feat) if feat is not None and not np.all(feat == 0)]
+        st_vis_plate_feat = np.concatenate((st_vis_feat * norm_weight_st_vis, plate_feat * norm_weight_plate), axis=-1)
+        st_vis_plate_feat = st_vis_plate_feat[st_vis_plate_feat_idx_list, :]
+
+        cancat_feats = [st_vis_plate_feat, st_vis_feat]
+        cancat_feats_orig_idx_list = [st_vis_plate_feat_idx_list, st_vis_feat_idx_list]
+        st_vis_plate_feat_idx_list = [i + pres_record_num[2] for i in st_vis_plate_feat_idx_list]
+        st_vis_feat_idx_list = [i + pres_record_num[2] for i in st_vis_feat_idx_list]
+        cancat_feats_idx_list = [st_vis_plate_feat_idx_list, st_vis_feat_idx_list]
+
+        print("search topk")
+        for i, idx_list in enumerate(cancat_feats_idx_list):
+            f_ids[i] += idx_list
+
+        topk_scores_list = []
+        topk_idxs_list = []
+        for f, dim, topk in zip(cancat_feats, self.f_dims, topK): # for each modal
+            if len(f) == 0:
+                topk_scores_list.append([])
+                topk_idxs_list.append([])
+                continue
+            topk_scores, topk_idxs = self.searchers[dim].search_by_topk_by_blocks(f, f, topk, query_num)
+            topk_scores_list.append(topk_scores)
+            topk_idxs_list.append(topk_idxs + cumul_removed_feat_num)
+        f_topks = [
+            [
+                [
+                    f_id[curr_topk_idx]
+                    for curr_topk_idx in curr_topk_idxs
+                    if curr_topk_idx < i + pres_record_num[modal_idx]
+                ]
+                for i, curr_topk_idxs in enumerate(topk_idxs)
+            ]
+            for modal_idx, (topk_idxs, f_id) in enumerate(zip(topk_idxs_list, f_ids))
+        ]
+        f_topks_score = [
+            [
+                [
+                    curr_topk_scores[curr_topk_idxs_idx]
+                    for curr_topk_idxs_idx, curr_topk_idx in enumerate(curr_topk_idxs)
+                    if curr_topk_idx < i + pres_record_num[modal_idx]
+                ]
+                for i, (curr_topk_idxs, curr_topk_scores) in enumerate(zip(topk_idxs, topk_scores))
+            ]
+            for modal_idx, (topk_idxs, topk_scores) in enumerate(zip(topk_idxs_list, topk_scores_list))
+        ]
+
+        # fusion similarity
+        fusion_sim_time = time.time()
+        topks = [[] for _ in range(record_num)]
+        topks_score = [[] for _ in range(record_num)]
+        # for the indexes combination, the features with plate have the higher assignment priority 
+        for f_id, f_topk, f_topk_score in zip(cancat_feats_orig_idx_list, f_topks, f_topks_score):
+            for i, topk, topk_score in zip(f_id, f_topk, f_topk_score):
+                intersection_topk = set(topks[i]).intersection(topk)
+                for j, k in enumerate(topk):
+                    if k not in intersection_topk:
+                        topks[i].append(k)
+                        topks_score[i].append(topk_score[j])
+        snapshots_retrieval_time = time.time() - snapshots_retrieval_time # record the similarity computation time
+        print('fusion similarity consuming time: {}'.format(time.time() - fusion_sim_time))
+        
+        # output the running time of each module
+        print(f'snapshots retrieval time: {snapshots_retrieval_time}')
+        print("snapshots retrieval finished!")
+
+        return topks, topks_score
+
+def FastIncClusterSimCalcClusterGen(
+    st_feat,
+    car_feat,
+    plate_feat,
+    cids,
+    weights=[1],
+    sim_thres=0.88,
+    adj_pt_ratio=0.5,
+    spher_distrib_coeff=1,
+    f_ids=[[], []],
+    id_dict={},
+    cfs={},
+    css={},
+    cf_means={},
+    cf_means_no_norm={},
+    curr_label=0,
+    pres_record_num=[0, 0, 0],
+    topks=[],
+    topks_score=[],
+    online_update=False,
+):
+    # clusters generation
+    print("clusters generation")
+    gen_cluster_time = time.time()
+    sim_calc_time = 0
+    organize_topk_time = 0
+    closeness_calc_time = 0
+    cluster_sim_calc_time = 0
+    statistics_update_time = 0
+    sim_select_num = 0
+    sim_computation_num = 0
+    connect_flag_table = [np.array(topk_score) > sim_thres for topk_score in topks_score]
+    data = [[a, b, c] if c is not None and not np.all(c == 0) else [a, b, None] for a, b, c in zip(st_feat, car_feat, plate_feat)]
+    for record_idx1, connect_flag1 in tqdm(enumerate(connect_flag_table)):
+        start_sim_calc_time = time.time()
+        record_idx1_total_seq = record_idx1 + pres_record_num[2]
+        connect_record_num = np.sum(connect_flag1 == True)
+        if connect_record_num == 0:
+            cids[record_idx1_total_seq] = curr_label
+            id_dict[curr_label] = [record_idx1_total_seq]
+            cf_means[curr_label] = data[record_idx1]
+            if online_update:
+                css[curr_label] = [0 if j is None else 1 for j in data[record_idx1]]
+                cf_means_no_norm[curr_label] = data[record_idx1]
+            else:
+                cfs[curr_label] = [[] if j is None else [j] for j in data[record_idx1]]
+            curr_label += 1
+            continue
+        
+        start_organize_topk_time = time.time()
+        connect_record_idx_array = np.argwhere(connect_flag1)
+        cid_sim_dict = defaultdict(list)
+        for connect_record_idx in connect_record_idx_array[:, 0]:
+            record_idx2 = topks[record_idx1][connect_record_idx]
+            curr_sim = topks_score[record_idx1][connect_record_idx]
+            topk_cid = cids[record_idx2]
+            cid_sim_dict[topk_cid].append(curr_sim)
+        organize_topk_time += time.time() - start_organize_topk_time
+
+        start_closeness_calc_time = time.time()
+        select_cid_list = []
+        quick_calc_select_cid_list = []
+        for cid, sim_list in cid_sim_dict.items():
+            closeness = float(len(sim_list)) / len(id_dict[cid])
+            if closeness > spher_distrib_coeff:
+                quick_calc_select_cid_list.append(cid)
+            elif closeness > adj_pt_ratio:
+                select_cid_list.append(cid)
+        closeness_calc_time += time.time() - start_closeness_calc_time
+        # print('the number of the selected cid list is: {}'.format(len(select_cid_list)))
+        # print('the number of the quick calculation selected cid list is: {}'.format(len(quick_calc_select_cid_list)))
+        # print(f'current snapshot similarity computation times: {len(select_cid_list) - len(quick_calc_select_cid_list)}')
+
+        start_cluster_sim_calc_time = time.time()
+        max_sim = 0
+        final_cid = -1
+        for cid in quick_calc_select_cid_list:
+            curr_sim = max(cid_sim_dict[cid])
+            if curr_sim > max_sim:
+                max_sim = curr_sim
+                final_cid = cid
+        for cid in select_cid_list:
+            w_total = 0
+            curr_sim = 0
+            for w, a, b in zip(weights, data[record_idx1], cf_means[cid]):
+                if a is not None and b is not None:
+                    curr_sim += a @ b * w
+                    w_total += w
+            curr_sim /= w_total
+            if curr_sim > max_sim:
+                max_sim = curr_sim
+                final_cid = cid
+        cluster_sim_calc_time += time.time() - start_cluster_sim_calc_time
+
+        sim_calc_time += time.time() - start_sim_calc_time
+        sim_select_num += len(quick_calc_select_cid_list)
+        sim_computation_num += len(select_cid_list)
+
+        start_statistics_update_time = time.time()
+        if online_update:
+            if max_sim > sim_thres:
+                cids[record_idx1_total_seq] = final_cid
+                id_dict[final_cid].append(record_idx1_total_seq)
+                cs = css[final_cid]
+                cf_mean = cf_means[final_cid]
+                cf_mean_no_norm = cf_means_no_norm[final_cid]
+                for j, k in enumerate(data[record_idx1]):
+                    if k is not None:
+                        if cs[j]:
+                            inc_mean_weight = cs[j] / (cs[j] + 1)
+                            cs[j] += 1
+                            cf_mean_no_norm[j] = cf_mean_no_norm[j] * inc_mean_weight + k * (1 - inc_mean_weight)
+                            cf_mean[j] = normalize(cf_mean_no_norm[j])
+                        else:
+                            cs[j] = 1
+                            cf_mean[j] = k
+                            cf_mean_no_norm[j] = k
+            else:
+                cids[record_idx1_total_seq] = curr_label
+                id_dict[curr_label] = [record_idx1_total_seq]
+                css[curr_label] = [0 if j is None else 1 for j in data[record_idx1]]
+                cf_means[curr_label] = data[record_idx1]
+                cf_means_no_norm[curr_label] = data[record_idx1]
+                curr_label += 1
+        else:
+            if max_sim > sim_thres:
+                cids[record_idx1_total_seq] = final_cid
+                id_dict[final_cid].append(record_idx1_total_seq)
+                cf = cfs[final_cid]
+                cf_mean = cf_means[final_cid]
+                for j, k in enumerate(data[record_idx1]):
+                    if k is not None:
+                        if cf[j]:
+                            cf[j].append(k)
+                            cf_mean[j] = normalize(np.mean(cf[j], axis=0))
+                        else:
+                            cf[j] = [k]
+                            cf_mean[j] = k
+            else:
+                cids[record_idx1_total_seq] = curr_label
+                id_dict[curr_label] = [record_idx1_total_seq]
+                cf_means[curr_label] = data[record_idx1]
+                cfs[curr_label] = [[] if j is None else [j] for j in data[record_idx1]]
+                curr_label += 1
+        statistics_update_time = time.time() - start_statistics_update_time + statistics_update_time
+    
+    gen_cluster_time = time.time() - gen_cluster_time
+
+    # output the running time of each module
+    print(f'cluster generation total cosuming time: {gen_cluster_time}')
+    print(f'similarity computation total cosuming time: {sim_calc_time}')
+    print(f'topk organization total cosuming time: {organize_topk_time}')
+    print(f'closeness computation total cosuming time: {closeness_calc_time}')
+    print(f'cluster similarity computation total cosuming time: {cluster_sim_calc_time}')
+    print(f'cluster statistics update total cosuming time: {statistics_update_time}')
+    print(f'total similarity computation times: {sim_computation_num}')
+    print(f'total selected times: {sim_select_num}')
+    print(f'the number of snapshots is: {len(data)}')
+    print("clustering finished!")
+
+    return f_ids, cids, id_dict, cfs, css, cf_means, cf_means_no_norm, curr_label

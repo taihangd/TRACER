@@ -8,6 +8,7 @@ from tqdm import tqdm
 from collections import defaultdict
 from sklearn.cluster import HDBSCAN
 import sklearn.random_projection as rp
+from cluster import *
 
 
 #%% the MMVC+ clustering algorithm
@@ -221,6 +222,497 @@ class SigCluster:
         print('Done!')
 
         return cids
+
+class SigClusterRetrieval:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.searchers = {i: FlatSearcher(ngpu, i, useFloat16) for i in set(feature_dims)}
+        self.f_dims = feature_dims
+
+    def fit(
+        self,
+        data,
+        weights=[1],
+        topK=128,
+        query_num=8192,
+        normalized=True,
+    ):
+        snapshots_retrieval_time = time.time()
+        if isinstance(weights, float) or isinstance(weights, int):
+            weights = [weights] * len(self.f_dims)
+        else:
+            assert len(weights) == len(self.f_dims)
+        if isinstance(topK, int):
+            topK = [topK] * len(self.f_dims)
+        else:
+            assert len(topK) == len(self.f_dims)
+
+        if normalized: # have replaced the None type with the all-zero array
+            print("Normalize")
+            data = [
+                [None if np.all(j == 0) else normalize(j) for j in i] for i in tqdm(data)
+            ]
+
+        print("Search topk")
+        data_ = list(zip(*data))
+        fs = []
+        f_ids = []
+        for i in data_:
+            tmp = [x for x in i if x is not None]
+            if len(tmp) == 0: # if all snapshots for this feature dimension have no valid values
+                continue
+            f_id, f = zip(*((j, k) for j, k in enumerate(i) if k is not None))
+            fs.append(np.array(f))
+            f_ids.append(f_id)
+
+        topk_idxs_list = []
+        for f, dim, topk in zip(fs, self.f_dims, topK): # for each modal
+            # topk_scores, topk_idxs = self.searchers[dim].search_by_topk(f, f, topk, query_num)
+            topk_scores, topk_idxs = self.searchers[dim].search_by_topk_by_blocks(f, f, topk, query_num)
+            topk_idxs_list.append(topk_idxs)
+        f_topks = [
+            [
+                [
+                    f_id[curr_topk_idx]
+                    for curr_topk_idx in curr_topk_idxs
+                    if curr_topk_idx < i
+                ]
+                for i, curr_topk_idxs in enumerate(topk_idxs)
+            ]
+            for topk_idxs, f_id in zip(topk_idxs_list, f_ids)
+        ]
+        assert all(len(i[0]) == 0 for i in f_topks)
+
+        topks = [[] for _ in range(len(data))]
+        for f_topk, f_id in zip(f_topks, f_ids):
+            for i, topk in zip(f_id, f_topk):
+                topks[i] += topk
+       
+        snapshots_retrieval_time = time.time() - snapshots_retrieval_time # record the similarity computation time
+
+        # print(f'preprocessing time: {preprocess_time}')
+        print(f'snapshots retrieval time: {snapshots_retrieval_time}')
+        print('Done!')
+
+        return topks
+
+def SigClusterSimCalcClusterGen(
+    data,
+    initial_labels=None,
+    weights=[1],
+    similarity_threshold=0.88,
+    topks=[],
+    N=1000,
+    online_update=False,
+):
+    # unify missing modal data format
+    data = [
+        [None if np.all(j == 0) else normalize(j) for j in i] for i in tqdm(data)
+    ]
+
+    print("Clustering")
+    gen_cluster_time = time.time()
+    cfs = {}
+    css = {}
+    cf_means = {}
+    cf_means_no_norm = {}
+    if initial_labels is None:
+        cids = [-1] * N
+    else:
+        cids = initial_labels
+        cid2records = defaultdict(list)
+        for cid, record in zip(cids, data):
+            if cid >= 0:
+                cid2records[cid].append(record)
+        for cid, rs in cid2records.items():
+            tmp = cfs[cid] = [[j for j in i if j is not None] for i in zip(*rs)]
+            cf_means[cid] = [
+                normalize(np.mean(t, axis=0)) if len(t) else None for t in tmp
+            ]
+    
+    sim_computation_num = 0
+    sim_calc_time = 0
+    statistics_update_time = 0
+    for i, (record, topk) in enumerate(zip(tqdm(data), topks)):
+        start_sim_calc_time = time.time()
+        if cids[i] >= 0:
+            continue
+        cs = {cids[i] for i in topk}
+        best_cid = -1
+        best_sim = -1
+        for c in cs:
+            w_total = 0
+            sim = 0
+            for w, a, b in zip(weights, record, cf_means[c]):
+                if a is not None and b is not None:
+                    sim += a @ b * w
+                    w_total += w
+            sim /= w_total
+            if sim > best_sim:
+                best_sim = sim
+                best_cid = c
+        
+        sim_computation_num += len(cs)
+        sim_calc_time += time.time() - start_sim_calc_time
+        start_statistics_update_time = time.time()
+
+        if online_update:
+            if best_cid >= 0 and best_sim >= similarity_threshold:
+                cids[i] = best_cid
+                cs = css[best_cid]
+                cf_mean = cf_means[best_cid]
+                cf_mean_no_norm = cf_means_no_norm[best_cid]
+                for j, k in enumerate(record):
+                    if k is not None:
+                        if cs[j]:
+                            inc_mean_weight = cs[j] / (cs[j] + 1)
+                            cs[j] += 1
+                            cf_mean_no_norm[j] = cf_mean_no_norm[j] * inc_mean_weight + k * (1 - inc_mean_weight)
+                            cf_mean[j] = normalize(cf_mean_no_norm[j])
+                        else:
+                            cs[j] = 1
+                            cf_mean[j] = k
+                            cf_mean_no_norm[j] = k
+            else:
+                cid = len(cf_means)
+                cids[i] = cid
+                css[cid] = [0 if j is None else 1 for j in record]
+                cf_means[cid] = record
+                cf_means_no_norm[cid] = record
+        else:
+            if best_cid >= 0 and best_sim >= similarity_threshold:
+                cids[i] = best_cid
+                cf = cfs[best_cid]
+                cf_mean = cf_means[best_cid]
+                for j, k in enumerate(record):
+                    if k is not None:
+                        if cf[j]:
+                            cf[j].append(k)
+                            cf_mean[j] = normalize(np.mean(cf[j], axis=0))
+                        else:
+                            cf[j] = [k]
+                            cf_mean[j] = k
+            else:
+                cid = len(cf_means)
+                cids[i] = cid
+                cf_means[cid] = record
+                cfs[cid] = [[] if j is None else [j] for j in record]
+
+        statistics_update_time = time.time() - start_statistics_update_time + statistics_update_time
+
+    gen_cluster_time = time.time() - gen_cluster_time
+
+    # print(f'preprocessing time: {preprocess_time}')
+    print(f'if online update? {online_update}')
+    print(f'cluster generation total cosuming time: {gen_cluster_time}')
+    print(f'similarity computation total cosuming time: {sim_calc_time}')
+    print(f'cluster statistics update total cosuming time: {statistics_update_time}')
+    print(f'similarity computation total times: {sim_computation_num}')
+    print(f'the number of snapshots is: {len(data)}')
+    print('Done!')
+
+    return cids
+
+class JRRQ_Cluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.fast_inc_cluster_ret = FastIncClusterRetrieval(feature_dims, ngpu, useFloat16) # initialization
+
+    def fit(
+        self,
+        cumul_removed_feat_num,
+        feats,
+        initial_labels=None,
+        weights=[1],
+        similarity_threshold=0.88,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        pres_record_num=[0, 0, 0],
+    ):
+        # retrieve the similar snapshots by Strick
+        topks, _ = self.fast_inc_cluster_ret.fit(cumul_removed_feat_num,
+                                                feats,
+                                                weights=weights,
+                                                topK=topK,
+                                                query_num=query_num,
+                                                normalization=normalization,
+                                                f_ids=f_ids,
+                                                pres_record_num=pres_record_num)
+        
+        # convert data format
+        st_feat, car_feat, plate_feat = feats
+        data = [[a, b, c] for a, b, c in zip(st_feat, car_feat, plate_feat)]
+        N = len(data)
+
+        print("Clustering")
+        cids = SigClusterSimCalcClusterGen(data,
+                                            initial_labels=initial_labels,
+                                            weights=weights,
+                                            similarity_threshold=similarity_threshold,
+                                            topks=topks,
+                                            N=N,
+                                            online_update=False)
+
+        return cids
+    
+class CDSC_Cluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.sig_cluster_ret = SigClusterRetrieval(feature_dims, ngpu, useFloat16) # initialization
+
+    def fit(
+        self,
+        feats,
+        pred_label,
+        weights=[1],
+        sim_thres=0.88,
+        adj_pt_ratio=0.5,
+        spher_distrib_coeff=1,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        id_dict={},
+        cfs={},
+        css={},
+        cf_means={},
+        cf_means_no_norm={},
+        curr_label=0,
+        pres_record_num=[0, 0, 0],
+    ):
+        
+        # convert data format
+        st_feat, car_feat, plate_feat = feats
+        data = [[a, b, c] for a, b, c in zip(st_feat, car_feat, plate_feat)]
+        
+        # retrieve the similar snapshots by Strick
+        topks = self.sig_cluster_ret.fit(data,
+                                        weights=weights,
+                                        topK=topK,
+                                        query_num=query_num,
+                                        normalized=normalization)
+        
+        # compute the similarity score in topks
+        sim_calc_time = time.time()
+        data = [
+            [None if np.all(j == 0) else normalize(j) for j in i] for i in tqdm(data)
+        ]
+        topks_score = [[] for _ in range(len(data))]
+        for i, topk_list in enumerate(topks):
+            curr_data = data[i]
+            for topk_idx in topk_list:
+                # compute the similarity
+                w_total = 0
+                sim = 0
+                for w, a, b in zip(weights, curr_data, data[topk_idx]):
+                    if a is not None and b is not None:
+                        sim += a @ b * w
+                        w_total += w
+                sim /= w_total
+                topks_score[i].append(sim)
+        sim_calc_time = time.time() - sim_calc_time
+        print(f'calculate snapshot similarity time: {sim_calc_time}')
+        
+        print("Clustering")
+        f_ids, pred_label, id_dict, cfs, css, \
+            cf_means, cf_means_no_norm, curr_label = \
+                FastIncClusterSimCalcClusterGen(st_feat,
+                                                car_feat,
+                                                plate_feat,
+                                                pred_label,
+                                                weights=weights,
+                                                sim_thres=sim_thres,
+                                                adj_pt_ratio=adj_pt_ratio,
+                                                spher_distrib_coeff=spher_distrib_coeff,
+                                                f_ids=f_ids,
+                                                id_dict=id_dict,
+                                                cfs=cfs,
+                                                css=css,
+                                                cf_means=cf_means,
+                                                cf_means_no_norm=cf_means_no_norm,
+                                                curr_label=curr_label,
+                                                pres_record_num=pres_record_num,
+                                                topks=topks,
+                                                topks_score=topks_score,
+                                                online_update=False)
+
+        return pred_label
+
+class CCIU_Cluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.sig_cluster_ret = SigClusterRetrieval(feature_dims, ngpu, useFloat16) # initialization
+
+    def fit(
+        self,
+        data,
+        initial_labels=None,
+        weights=[1],
+        similarity_threshold=0.88,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+    ):
+        # retrieve the similar snapshots by Strick
+        topks = self.sig_cluster_ret.fit(data,
+                                        weights=weights,
+                                        topK=topK,
+                                        query_num=query_num,
+                                        normalized=normalization)
+        
+        print("Clustering")
+        cids = SigClusterSimCalcClusterGen(data,
+                                            initial_labels=initial_labels,
+                                            weights=weights,
+                                            similarity_threshold=similarity_threshold,
+                                            topks=topks,
+                                            N=len(data),
+                                            online_update=True)
+
+        return cids
+
+class JRRQ_CDSC_Cluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.fast_inc_cluster_ret = FastIncClusterRetrieval(feature_dims, ngpu, useFloat16) # initialization
+
+    def fit(
+        self,
+        cumul_removed_feat_num,
+        feats,
+        pred_label,
+        weights=[1],
+        sim_thres=0.88,
+        adj_pt_ratio=0.5,
+        spher_distrib_coeff=1,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        id_dict={},
+        cfs={},
+        css={},
+        cf_means={},
+        cf_means_no_norm={},
+        curr_label=0,
+        pres_record_num=[0, 0, 0],
+    ):
+        # retrieve the similar snapshots by Strick
+        topks, topks_score = self.fast_inc_cluster_ret.fit(cumul_removed_feat_num,
+                                                            feats,
+                                                            weights=weights,
+                                                            topK=topK,
+                                                            query_num=query_num,
+                                                            normalization=normalization,
+                                                            f_ids=f_ids,
+                                                            pres_record_num=pres_record_num)
+        
+        # convert data format
+        st_feat, car_feat, plate_feat = feats
+
+        print("Clustering")
+        f_ids, pred_label, id_dict, cfs, css, \
+            cf_means, cf_means_no_norm, curr_label = \
+                FastIncClusterSimCalcClusterGen(st_feat,
+                                                car_feat,
+                                                plate_feat,
+                                                pred_label,
+                                                weights=weights,
+                                                sim_thres=sim_thres,
+                                                adj_pt_ratio=adj_pt_ratio,
+                                                spher_distrib_coeff=spher_distrib_coeff,
+                                                f_ids=f_ids,
+                                                id_dict=id_dict,
+                                                cfs=cfs,
+                                                css=css,
+                                                cf_means=cf_means,
+                                                cf_means_no_norm=cf_means_no_norm,
+                                                curr_label=curr_label,
+                                                pres_record_num=pres_record_num,
+                                                topks=topks,
+                                                topks_score=topks_score,
+                                                online_update=False)
+
+        return pred_label
+
+class CDSC_CCIU_Cluster:
+    def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
+        self.sig_cluster_ret = SigClusterRetrieval(feature_dims, ngpu, useFloat16) # initialization
+
+    def fit(
+        self,
+        feats,
+        pred_label,
+        weights=[1],
+        sim_thres=0.88,
+        adj_pt_ratio=0.5,
+        spher_distrib_coeff=1,
+        topK=128,
+        query_num=8192,
+        normalization=True,
+        f_ids=[[], []],
+        id_dict={},
+        cfs={},
+        css={},
+        cf_means={},
+        cf_means_no_norm={},
+        curr_label=0,
+        pres_record_num=[0, 0, 0],
+    ):
+        
+        # convert data format
+        st_feat, car_feat, plate_feat = feats
+        data = [[a, b, c] for a, b, c in zip(st_feat, car_feat, plate_feat)]
+        
+        # retrieve the similar snapshots by Strick
+        topks = self.sig_cluster_ret.fit(data,
+                                        weights=weights,
+                                        topK=topK,
+                                        query_num=query_num,
+                                        normalized=normalization)
+        
+        # compute the similarity score in topks
+        sim_calc_time = time.time()
+        data = [
+            [None if np.all(j == 0) else normalize(j) for j in i] for i in tqdm(data)
+        ]
+        topks_score = [[] for _ in range(len(data))]
+        for i, topk_list in enumerate(topks):
+            curr_data = data[i]
+            for topk_idx in topk_list:
+                # compute the similarity
+                w_total = 0
+                sim = 0
+                for w, a, b in zip(weights, curr_data, data[topk_idx]):
+                    if a is not None and b is not None:
+                        sim += a @ b * w
+                        w_total += w
+                sim /= w_total
+                topks_score[i].append(sim)
+        sim_calc_time = time.time() - sim_calc_time
+        print(f'calculate snapshot similarity time: {sim_calc_time}')
+        
+        print("Clustering")
+        f_ids, pred_label, id_dict, cfs, css, \
+            cf_means, cf_means_no_norm, curr_label = \
+                FastIncClusterSimCalcClusterGen(st_feat,
+                                                car_feat,
+                                                plate_feat,
+                                                pred_label,
+                                                weights=weights,
+                                                sim_thres=sim_thres,
+                                                adj_pt_ratio=adj_pt_ratio,
+                                                spher_distrib_coeff=spher_distrib_coeff,
+                                                f_ids=f_ids,
+                                                id_dict=id_dict,
+                                                cfs=cfs,
+                                                css=css,
+                                                cf_means=cf_means,
+                                                cf_means_no_norm=cf_means_no_norm,
+                                                curr_label=curr_label,
+                                                pres_record_num=pres_record_num,
+                                                topks=topks,
+                                                topks_score=topks_score,
+                                                online_update=True)
+
+        return pred_label
 
 #%% DBSCAN algorithms
 # PDBSCAN
@@ -570,7 +1062,7 @@ def kmeans_missing_data(st_feat, car_feat, plate_feat, cfg):
                             topK=topK, query_num=query_num, 
                             normalization=normalization)
     print('KMeans for missing data instantiates object successfully!')
-    norm_init = cfg.norm_init
+    norm_init = cfg.kmeas_missing_data['norm_init']
     kmeans.init(cfg.seed, norm_init)
     print('KMeans for missing data initialization successfully!')
     # run missing data version kmeans

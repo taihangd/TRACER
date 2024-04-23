@@ -43,12 +43,16 @@ There are the configuration files in "./config" folder, where one can edit and s
 - modules folder
   - The network structure and loss function files.
 - cluster.py
-  - our incremental clustering algorithm.
+  - our clustering algorithm.
 - eval.py
   - evaluation module.
 - self_train.py
-  - network self-training module.
+  - network self-supervised training module.
 - self_train_test.py
+  - algorithm testing module.
+- train.py
+  - network supervised training module.
+- test.py
   - algorithm testing module.
 - test_cluster.py
   - for testing clustering algorithms.
@@ -64,11 +68,7 @@ After setting the configuration, to start self-training, simply run
 
 ## Testing
 Once the training is completed, there will be a saved model in the "checkpoints" specified in the configuration file. 
-To test the self-trained model, run
-
-> python self_train_test.py
-
-Or after setting the corresponding configuration file, you can run
+After setting the corresponding configuration file, you can run
 
 > python test_cluster.py
 

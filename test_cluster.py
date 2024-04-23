@@ -49,10 +49,16 @@ def extract_feat(loader, model, device, cam_vec_idx_dict, road_graph_node_emb):
 
 
 if __name__ == "__main__":
-    dataset_config_file = "./config/uv_comparison_cluster.yaml"
+    # configuration file setting
+    # dataset_config_file = "./config/uv_comparison_cluster.yaml"
     # dataset_config_file = "./config/uv-75_comparison_cluster.yaml"
     # dataset_config_file = "./config/uv-z_comparison_cluster.yaml"
     # dataset_config_file = "./config/carla_comparison_cluster.yaml"
+
+    dataset_config_file = "./config/uv_train.yaml"
+    # dataset_config_file = "./config/uv-75_train.yaml"
+    # dataset_config_file = "./config/uv-z_train.yaml"
+    # dataset_config_file = "./config/carla_train.yaml"    
 
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
@@ -215,12 +221,14 @@ if __name__ == "__main__":
         cumul_removed_feat_num = 0
         f_ids = [[], []]
         id_dict = {}
-        cfs = {}
+        css = {}
+        cf_means = {}
+        cf_means_no_norm = {}
         pred_label = [-1] * feat_num
         curr_label = 0
         pres_record_num = [0, 0, 0]
         for curr_batch_feat in batch_feat_list:
-            f_ids, pred_label, id_dict, cfs, curr_label, pres_record_num = cluster.fit(
+            f_ids, pred_label, id_dict, css, cf_means, cf_means_no_norm, curr_label, pres_record_num = cluster.fit(
                 cumul_removed_feat_num,
                 curr_batch_feat,
                 pred_label,
@@ -233,7 +241,9 @@ if __name__ == "__main__":
                 normalization=True,
                 f_ids=f_ids,
                 id_dict=id_dict,
-                cfs=cfs,
+                css=css,
+                cf_means=cf_means,
+                cf_means_no_norm=cf_means_no_norm,
                 curr_label=curr_label,
                 pres_record_num=pres_record_num,
             )
@@ -241,12 +251,185 @@ if __name__ == "__main__":
             cluster.searchers[feat_dim].reset()
         return pred_label, len(set(pred_label))
 
+    def JRRQ_clustering(): # Joint Representation Range Query clustering, currently only supports single batch data processing
+        feat_num = len(st_feat)
+        batch_feat_num = feat_num # processes all data in a single batch for default setting
+        batch_feat_list = [
+            [st_feat[i:i+batch_feat_num], car_feat[i:i+batch_feat_num], plate_feat[i:i+batch_feat_num]] 
+                for i in range(0, feat_num, batch_feat_num)
+            ]
+        cluster = JRRQ_Cluster(args.JRRQ['feat_dims'], args.JRRQ['ngpu'], args.JRRQ['useFloat16']) # initialization
+        cumul_removed_feat_num = 0
+        f_ids = [[], []]
+        pred_label = [-1] * feat_num
+        pres_record_num = [0, 0, 0]
+        for curr_batch_feat in batch_feat_list:
+            pred_label = cluster.fit(
+                cumul_removed_feat_num,
+                curr_batch_feat,
+                pred_label,
+                weights=args.JRRQ['weights'], 
+                similarity_threshold=args.JRRQ['sim_thres'],
+                topK=args.JRRQ['topK'],
+                query_num=args.JRRQ['query_num'],
+                normalization=True,
+                f_ids=f_ids,
+                pres_record_num=pres_record_num,
+            )
+        for feat_dim in set(args.JRRQ['feat_dims']):
+            cluster.fast_inc_cluster_ret.searchers[feat_dim].reset()
+        return pred_label, len(set(pred_label))
+
+    def CDSC_clustering(): # Configurable Distribution Similarity Calculation clustering, currently only supports single batch data processing
+        feat_num = len(st_feat)
+        batch_feat_num = feat_num # processes all data in a single batch for default setting
+        batch_feat_list = [
+            [st_feat[i:i+batch_feat_num], car_feat[i:i+batch_feat_num], plate_feat[i:i+batch_feat_num]] 
+                for i in range(0, feat_num, batch_feat_num)
+            ]
+        cluster = CDSC_Cluster(args.CDSC['feat_dims'], args.CDSC['ngpu'], args.CDSC['useFloat16']) # initialization
+        f_ids = [[], []]
+        id_dict = {}
+        cfs = {}
+        css = {}
+        cf_means = {}
+        cf_means_no_norm = {}
+        pred_label = [-1] * feat_num
+        curr_label = 0
+        pres_record_num = [0, 0, 0]
+        for curr_batch_feat in batch_feat_list:
+            pred_label = cluster.fit(
+                curr_batch_feat,
+                pred_label,
+                weights=args.CDSC['weights'], 
+                sim_thres=args.CDSC['sim_thres'],
+                adj_pt_ratio=args.CDSC['adj_pt_ratio'],
+                spher_distrib_coeff=args.CDSC['spher_distrib_coeff'],
+                topK=args.CDSC['topK'],
+                query_num=args.CDSC['query_num'],
+                normalization=True,
+                f_ids=f_ids,
+                id_dict=id_dict,
+                cfs=cfs,
+                css=css,
+                cf_means=cf_means,
+                cf_means_no_norm=cf_means_no_norm,
+                curr_label=curr_label,
+                pres_record_num=pres_record_num,
+            )
+        for feat_dim in set(args.CDSC['feat_dims']):
+            cluster.sig_cluster_ret.searchers[feat_dim].reset()
+        return pred_label, len(set(pred_label))
+
+    def CCIU_clustering(): # Cluster Center Incremental Update clustering, currently only supports single batch data processing
+        cluster = CCIU_Cluster(feature_dims=args.CCIU['feat_dims'], ngpu=args.CCIU['ngpu'], useFloat16=args.CCIU['useFloat16'])
+        pred_label = cluster.fit(
+            [[a, b, c] for a, b, c in zip(st_feat, car_feat, plate_feat)],
+            initial_labels=None,
+            weights=args.CCIU['weights'], 
+            similarity_threshold=args.CCIU['sim_thres'],
+            topK=args.CCIU['topK'],
+            query_num=args.CCIU['query_num'],
+            normalization=True,
+        )
+        return pred_label, len(set(pred_label))
+    
+    def JRRQ_CDSC_clustering(): # JRRQ-CDSC clustering, currently only supports single batch data processing
+        feat_num = len(st_feat)
+        batch_feat_num = feat_num # processes all data in a single batch for default setting
+        batch_feat_list = [
+            [st_feat[i:i+batch_feat_num], car_feat[i:i+batch_feat_num], plate_feat[i:i+batch_feat_num]] 
+                for i in range(0, feat_num, batch_feat_num)
+            ]
+        cluster = JRRQ_CDSC_Cluster(args.JRRQ_CDSC['feat_dims'], args.JRRQ_CDSC['ngpu'], args.JRRQ_CDSC['useFloat16']) # initialization
+        cumul_removed_feat_num = 0
+        f_ids = [[], []]
+        id_dict = {}
+        cfs = {}
+        css = {}
+        cf_means = {}
+        cf_means_no_norm = {}
+        pred_label = [-1] * feat_num
+        curr_label = 0
+        pres_record_num = [0, 0, 0]
+        for curr_batch_feat in batch_feat_list:
+            pred_label = cluster.fit(
+                cumul_removed_feat_num,
+                curr_batch_feat,
+                pred_label,
+                weights=args.JRRQ_CDSC['weights'], 
+                sim_thres=args.JRRQ_CDSC['sim_thres'],
+                adj_pt_ratio=args.JRRQ_CDSC['adj_pt_ratio'],
+                spher_distrib_coeff=args.JRRQ_CDSC['spher_distrib_coeff'],
+                topK=args.JRRQ_CDSC['topK'],
+                query_num=args.JRRQ_CDSC['query_num'],
+                normalization=True,
+                f_ids=f_ids,
+                id_dict=id_dict,
+                cfs=cfs,
+                css=css,
+                cf_means=cf_means,
+                cf_means_no_norm=cf_means_no_norm,
+                curr_label=curr_label,
+                pres_record_num=pres_record_num,
+            )
+        for feat_dim in set(args.JRRQ_CDSC['feat_dims']):
+            cluster.fast_inc_cluster_ret.searchers[feat_dim].reset()
+        return pred_label, len(set(pred_label))
+
+    def CDSC_CCIU_clustering(): # CDSC-CCIU clustering, currently only supports single batch data processing
+        feat_num = len(st_feat)
+        batch_feat_num = feat_num # processes all data in a single batch for default setting
+        batch_feat_list = [
+            [st_feat[i:i+batch_feat_num], car_feat[i:i+batch_feat_num], plate_feat[i:i+batch_feat_num]] 
+                for i in range(0, feat_num, batch_feat_num)
+            ]
+        cluster = CDSC_CCIU_Cluster(args.CDSC_CCIU['feat_dims'], args.CDSC_CCIU['ngpu'], args.CDSC_CCIU['useFloat16']) # initialization
+        f_ids = [[], []]
+        id_dict = {}
+        cfs = {}
+        css = {}
+        cf_means = {}
+        cf_means_no_norm = {}
+        pred_label = [-1] * feat_num
+        curr_label = 0
+        pres_record_num = [0, 0, 0]
+        for curr_batch_feat in batch_feat_list:
+            pred_label = cluster.fit(
+                curr_batch_feat,
+                pred_label,
+                weights=args.CDSC_CCIU['weights'], 
+                sim_thres=args.CDSC_CCIU['sim_thres'],
+                adj_pt_ratio=args.CDSC_CCIU['adj_pt_ratio'],
+                spher_distrib_coeff=args.CDSC_CCIU['spher_distrib_coeff'],
+                topK=args.CDSC_CCIU['topK'],
+                query_num=args.CDSC_CCIU['query_num'],
+                normalization=True,
+                f_ids=f_ids,
+                id_dict=id_dict,
+                cfs=cfs,
+                css=css,
+                cf_means=cf_means,
+                cf_means_no_norm=cf_means_no_norm,
+                curr_label=curr_label,
+                pres_record_num=pres_record_num,
+            )
+        for feat_dim in set(args.CDSC_CCIU['feat_dims']):
+            cluster.sig_cluster_ret.searchers[feat_dim].reset()
+        return pred_label, len(set(pred_label))
+
+
     cluster_dict = {'K-Means': kmeans_clustering, 
                     'agglomerative': aggl_clustering,
                     'HDBSCAN': HDBSCAN_clustering,
                     'PDBSCAN': PDBSCAN_clustering,
                     'MMVC': MMVC_clustering,
                     'Strick': inc_clustering,
+                    'JRRQ': JRRQ_clustering,
+                    'CDSC': CDSC_clustering,
+                    'CCIU': CCIU_clustering,
+                    'JRRQ_CDSC': JRRQ_CDSC_clustering,
+                    'CDSC_CCIU': CDSC_CCIU_clustering,
                     }
     selected_cluster = cluster_dict.get(args.select_cluster, None)
     if selected_cluster:

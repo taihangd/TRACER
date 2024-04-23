@@ -5,7 +5,6 @@ import pickle
 import random
 import torch
 from gensim.models import KeyedVectors
-import eval
 from modules import network, contrastive_loss
 from modules.contrastive_loss import *
 from datasets.urban_vehicle import *
@@ -244,10 +243,10 @@ def train(all_pairs_list, snapshot_info_list,
 
 if __name__ == "__main__":
     # configuration file setting
-    dataset_config_file = "./config/uv_self_train.yaml"
-    # dataset_config_file = "./config/uv-75_self_train.yaml"
-    # dataset_config_file = "./config/uv-z_self_train.yaml"
-    # dataset_config_file = "./config/carla_self_train.yaml"
+    dataset_config_file = "./config/uv_train.yaml"
+    # dataset_config_file = "./config/uv-75_train.yaml"
+    # dataset_config_file = "./config/uv-z_train.yaml"
+    # dataset_config_file = "./config/carla_train.yaml"
     
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
@@ -260,7 +259,6 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     random.seed(args.seed)
-    np.random.seed(args.seed)
 
     # prepare data
     if args.dataset == "UrbanVehicle":
@@ -331,64 +329,26 @@ if __name__ == "__main__":
     num_group_pairs = int(train_dataset.record_num / train_dataset.traj_num) # set the pairs number in the group
     snapshot_info_list = gen_snapshot_list(train_data_loader_snapshots, device, args.preload_gpu_flag)
 
-    # fast incremental clustering initialization
-    cluster = IncCluster(args.inc_cluster['feat_dims'], args.inc_cluster['ngpu'], args.inc_cluster['useFloat16'])
+    # get the initialized pseudo labels
+    extract_feat_time = time.time()
+    st_feat, car_feat, plate_feat, gt_labels = extract_feat(eval_data_loader, model, device, cam_vec_idx_dict, road_graph_node_emb) # extract features
+    extract_feat_time = time.time() - extract_feat_time
+    print("extracting features consume time:", extract_feat_time)
+
+    # generate a list of sample pairs for one epoch
+    get_sample_idx_pairs_time = time.time()
+    all_pairs_list = get_sample_idx_pairs(gt_labels, num_sampl_group, num_group_pairs, args.batch_size)
+    get_sample_idx_pairs_time = time.time() - get_sample_idx_pairs_time
+    print(f'get sample idx pairs consume time: {get_sample_idx_pairs_time}')
 
     # train main loop
     train_network_time = time.time()
     cluster_result_st_feat_centroids, cluster_result_st_feat_density = None, None
     cluster_result_car_feat_centroids, cluster_result_car_feat_density = None, None
     cluster_result_plate_feat_centroids, cluster_result_plate_feat_density = None, None
-    cluster_result_centroids_validation, cluster_result_density_validation = None, None
     loss_list = list()
     for epoch in range(args.start_epoch, args.epochs):
-        # get the initialized pseudo labels
-        extract_feat_time = time.time()
-        st_feat, car_feat, plate_feat, gt_labels = extract_feat(eval_data_loader, model, device, cam_vec_idx_dict, road_graph_node_emb) # extract features
-        extract_feat_time = time.time() - extract_feat_time
-        print("extracting features consume time:", extract_feat_time)
-    
-        cluster_time = time.time()
-        # improved fast incremental SigCluster
-        cumul_removed_feat_num = 0 # to record the number of removal features that are too far apart
-        f_ids = [[], []]
-        id_dict = {}
-        cfs = {}
-        curr_label = 0
-        pres_record_num = [0, 0, 0]
-        feat_num = len(car_feat)
-        pred_label = [-1] * feat_num
-        f_ids, pred_label, id_dict, cfs, curr_label, pres_record_num = cluster.fit(
-            cumul_removed_feat_num,
-            [st_feat, car_feat, plate_feat],
-            pred_label,
-            weights=args.inc_cluster['weights'], 
-            sim_thres=args.inc_cluster['sim_thres'],
-            adj_pt_ratio=args.inc_cluster['adj_pt_ratio'],
-            spher_distrib_coeff=args.inc_cluster['spher_distrib_coeff'],
-            topK=args.inc_cluster['topK'],
-            query_num=args.inc_cluster['query_num'],
-            normalization=True,
-            f_ids=f_ids,
-            id_dict=id_dict,
-            cfs=cfs,
-            curr_label=curr_label,
-            pres_record_num=pres_record_num,
-        )
-        # clear the searchers' memory usage
-        for feat_dim in set(args.inc_cluster['feat_dims']):
-            cluster.searchers[feat_dim].reset()
-        torch.cuda.empty_cache() # free up GPU memory
-        cluster_time = time.time() - cluster_time
-        print("clustering consume time:", cluster_time)
-        
-        # estimate current snapshot label accuracy
-        eval_time = time.time()
-        precision, recall, fscore, expansion, vid_to_cid = eval.evaluate_prf(gt_labels, pred_label)
-        eval_time = time.time() - eval_time
-        print('precision/recall/fscore/expansion = {:.4f}/{:.4f}/{:.4f}/{:.4f}'.format(precision, recall, fscore, expansion))
-        print('evaluation consume time {}'.format(eval_time))
-
+        # generate cluster center
         if epoch >= args.warmup_epoch:
             gen_cluster_multimodal_feat_time = time.time()
             cluster_result_st_feat_centroids, \
@@ -397,21 +357,15 @@ if __name__ == "__main__":
             cluster_result_st_feat_density, \
             cluster_result_car_feat_density, \
             cluster_result_plate_feat_density, \
-            label_idx_dict = gen_cluster_multimodal_feat(eval_data_loader, pred_label, model, device, 
+            label_idx_dict = gen_cluster_multimodal_feat(eval_data_loader, gt_labels, model, device, 
                                                         cam_vec_idx_dict, road_graph_node_emb, 
                                                         args.temperature)
             gen_cluster_multimodal_feat_time = time.time() - gen_cluster_multimodal_feat_time
             print(f'generate cluster multi-modal feature consume time: {gen_cluster_multimodal_feat_time}')
 
-        # generate a list of sample pairs for one epoch
-        get_sample_idx_pairs_time = time.time()
-        all_pairs_list = get_sample_idx_pairs(pred_label, num_sampl_group, num_group_pairs, args.batch_size)
-        get_sample_idx_pairs_time = time.time() - get_sample_idx_pairs_time
-        print(f'get sample idx pairs consume time: {get_sample_idx_pairs_time}')
-
         # train for one epoch
         network_update_time = time.time()
-        loss_epoch = train(all_pairs_list, snapshot_info_list, np.array(pred_label), 
+        loss_epoch = train(all_pairs_list, snapshot_info_list, np.array(gt_labels), 
                             label_idx_dict, road_graph_node_emb, args.batch_size, device, 
                             [cluster_result_st_feat_centroids, cluster_result_car_feat_centroids, cluster_result_plate_feat_centroids], 
                             [cluster_result_st_feat_density, cluster_result_car_feat_density, cluster_result_plate_feat_density], 
@@ -425,7 +379,7 @@ if __name__ == "__main__":
         print(f"Epoch [{epoch}/{args.epochs}]\t Loss: {loss_epoch / len(all_pairs_list)}")
         loss_list.append(loss_epoch)
 
-        epoch_total_time = extract_feat_time + cluster_time + gen_cluster_multimodal_feat_time + get_sample_idx_pairs_time + network_update_time
+        epoch_total_time = extract_feat_time + gen_cluster_multimodal_feat_time + get_sample_idx_pairs_time + network_update_time
         print(f'current epoch consume time: {epoch_total_time}')
     
     train_network_time = time.time() - train_network_time
