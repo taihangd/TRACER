@@ -59,9 +59,6 @@ temperature: 0.2 # instance-wise loss
 loss_pic_path: "pics/uv-75_train/"
 loss_pic_file: "train_loss.png"
 
-# if load the trained model
-load_model: True
-
 # if add the plate information
 use_plate: True
 

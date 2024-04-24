@@ -50,15 +50,15 @@ def extract_feat(loader, model, device, cam_vec_idx_dict, road_graph_node_emb):
 
 if __name__ == "__main__":
     # configuration file setting
-    # dataset_config_file = "./config/uv_comparison_cluster.yaml"
-    # dataset_config_file = "./config/uv-75_comparison_cluster.yaml"
-    # dataset_config_file = "./config/uv-z_comparison_cluster.yaml"
-    # dataset_config_file = "./config/carla_comparison_cluster.yaml"
+    dataset_config_file = "./config/uv_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/uv-75_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/uv-z_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/carla_comparison_cluster.yaml"
 
-    dataset_config_file = "./config/uv_train.yaml"
+    # dataset_config_file = "./config/uv_train.yaml"
     # dataset_config_file = "./config/uv-75_train.yaml"
     # dataset_config_file = "./config/uv-z_train.yaml"
-    # dataset_config_file = "./config/carla_train.yaml"    
+    # dataset_config_file = "./config/carla_train.yaml"
 
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
@@ -134,12 +134,10 @@ if __name__ == "__main__":
     st_proj_k = network.get_st_proj(args.batch_size, args.time_feat_dim, args.time_scaling_factor, 
                                     args.mapped_feat_dim, road_graph_node_emb, device, args.st_proj_name)
     model = network.Network_MoCo(st_proj_q, st_proj_k, args.moco['dim'], args.moco['k'], args.moco['m'], args.moco['t'], args.moco['mlp'])
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
     model_fp = os.path.join(args.model_path, "sj_proj_model_checkpoint_{}.tar".format(args.test_epoch))
     checkpoint = torch.load(model_fp, map_location=device.type)
     model.load_state_dict(checkpoint['net'])
     model.to(device)
-    optimizer.load_state_dict(checkpoint['optimizer'])
     
     # loss definition
     criterion_multi_modal_proto_noise_contra_estimation = contrastive_loss.MultiModalPrototypicalLoss(
@@ -443,7 +441,7 @@ if __name__ == "__main__":
     print('precision/recall/fscore/expansion = {:.4f}/{:.4f}/{:.4f}/{:.4f}'.format(precision, recall, fscore, expansion))
     
     save_traj_rec_result(args, pred_label, gt_labels, vid_to_cid)
-    if args.select_cluster == 'Strick':
+    if args.save_record and args.select_cluster == 'Strick':
         save_record_feat(args, st_feat, car_feat, plate_feat)
     print('save recovered trajectory results successfully!')
 

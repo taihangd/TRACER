@@ -59,9 +59,6 @@ temperature: 0.2 # instance-wise loss
 loss_pic_path: "pics/carla/"
 loss_pic_file: "train_loss.png"
 
-# if load the trained model
-load_model: True
-
 # if add the plate information
 use_plate: False
 
@@ -125,7 +122,7 @@ inc_cluster:
   ngpu: 1
   useFloat16: True
   weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
+  sim_thres: 0.2
   topK: 2047
   query_num: 2048
   adj_pt_ratio: 0.35

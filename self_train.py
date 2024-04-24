@@ -244,10 +244,10 @@ def train(all_pairs_list, snapshot_info_list,
 
 if __name__ == "__main__":
     # configuration file setting
-    dataset_config_file = "./config/uv_self_train.yaml"
-    # dataset_config_file = "./config/uv-75_self_train.yaml"
-    # dataset_config_file = "./config/uv-z_self_train.yaml"
-    # dataset_config_file = "./config/carla_self_train.yaml"
+    dataset_config_file = "./config/uv.yaml"
+    # dataset_config_file = "./config/uv-75.yaml"
+    # dataset_config_file = "./config/uv-z.yaml"
+    # dataset_config_file = "./config/carla.yaml"
     
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
@@ -332,7 +332,7 @@ if __name__ == "__main__":
     snapshot_info_list = gen_snapshot_list(train_data_loader_snapshots, device, args.preload_gpu_flag)
 
     # fast incremental clustering initialization
-    cluster = IncCluster(args.inc_cluster['feat_dims'], args.inc_cluster['ngpu'], args.inc_cluster['useFloat16'])
+    cluster = FastIncCluster(args.inc_cluster['feat_dims'], args.inc_cluster['ngpu'], args.inc_cluster['useFloat16'])
 
     # train main loop
     train_network_time = time.time()

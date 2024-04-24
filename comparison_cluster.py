@@ -69,6 +69,9 @@ class FlatSearcher:
         topk_idxs = np.concatenate(topk_idxs_list, axis=0)
 
         return topk_scores, topk_idxs
+    
+    def reset(self):
+        self.index.reset()
 
 class SigCluster:
     def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
@@ -187,7 +190,7 @@ class SigCluster:
                     best_cid = c
             
             sim_computation_num += len(cs)
-            sim_calc_time = time.time() - start_sim_calc_time + sim_calc_time
+            sim_calc_time += time.time() - start_sim_calc_time
             start_statistics_update_time = time.time()
 
             if best_cid >= 0 and best_sim >= similarity_threshold:
@@ -223,6 +226,7 @@ class SigCluster:
 
         return cids
 
+#%% Ablation study
 class SigClusterRetrieval:
     def __init__(self, feature_dims=[256, 256], ngpu=1, useFloat16=False):
         self.searchers = {i: FlatSearcher(ngpu, i, useFloat16) for i in set(feature_dims)}

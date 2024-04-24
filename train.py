@@ -243,8 +243,8 @@ def train(all_pairs_list, snapshot_info_list,
 
 if __name__ == "__main__":
     # configuration file setting
-    dataset_config_file = "./config/uv_train.yaml"
-    # dataset_config_file = "./config/uv-75_train.yaml"
+    # dataset_config_file = "./config/uv_train.yaml"
+    dataset_config_file = "./config/uv-75_train.yaml"
     # dataset_config_file = "./config/uv-z_train.yaml"
     # dataset_config_file = "./config/carla_train.yaml"
     

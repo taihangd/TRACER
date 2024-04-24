@@ -1,8 +1,8 @@
 import os
 import time
 import argparse
-import random
 import pickle
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -297,7 +297,12 @@ def update_train(model, all_pairs_list,
 
 if __name__ == "__main__":
     # configuration file setting
-    dataset_config_file = "./config/uv_train.yaml"
+    dataset_config_file = "./config/uv_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/uv-75_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/uv-z_comparison_cluster.yaml"
+    # # dataset_config_file = "./config/carla_comparison_cluster.yaml"
+
+    # dataset_config_file = "./config/uv_train.yaml"
     # dataset_config_file = "./config/uv-75_train.yaml"
     # dataset_config_file = "./config/uv-z_train.yaml"
     # dataset_config_file = "./config/carla_train.yaml"

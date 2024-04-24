@@ -1,4 +1,4 @@
-# The official implementation of Strick
+# The official implementation of STRICK
 
 ![Python 3.9.16](https://img.shields.io/badge/python-3.9.16-green.svg?style=plastic)
 
@@ -36,8 +36,6 @@ There are the configuration files in "./config" folder, where one can edit and s
 ### code
 - cache_data folder
   - The cache data and corresponding generation files.
-- checkpoints folder
-  - The trained model is saved here.
 - datasets folder
   - The datasets classes files. If you want to test on your own datasets, try add the corresponding files here.
 - modules folder
@@ -47,30 +45,36 @@ There are the configuration files in "./config" folder, where one can edit and s
 - eval.py
   - evaluation module.
 - self_train.py
-  - network self-supervised training module.
-- self_train_test.py
-  - algorithm testing module.
+  - self-supervised training.
 - train.py
-  - network supervised training module.
+  - supervised training.
 - test.py
-  - algorithm testing module.
+  - algorithm evaluation.
 - test_cluster.py
-  - for testing clustering algorithms.
+  - evaluation for clustering modules.
 
 
 ## Cache Data Preparation
-Before training and testing, run the .py file in the "./cache_data" to generate cache data. 
+Before training and evaluation, run the .py file in the "./cache_data" to generate cache data. 
 
 ## Training
-After setting the configuration, to start self-training, simply run
+After setting the configuration, to start self-supervised training, simply run
 
 > python self_train.py
+
+to start supervised training, simply run
+
+> python train.py
 
 ## Testing
 Once the training is completed, there will be a saved model in the "checkpoints" specified in the configuration file. 
 After setting the corresponding configuration file, you can run
 
-> python test_cluster.py
+> python test.py
+
+or simply run
+
+> python test_cluster.py --select_cluster "Strick"
 
 ## Dataset
 Please download from our [repository](https://terabox.com/s/1BUll52ghFXuseGRaev-ElA). 

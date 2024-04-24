@@ -68,7 +68,7 @@ inc_cluster:
   ngpu: 1
   useFloat16: True
   weights: [0.3, 0.7, 0.0]
-  sim_thres: 0.35
+  sim_thres: 0.3
   topK: 2047
   query_num: 2048
   adj_pt_ratio: 0.35
