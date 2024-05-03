@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn.functional import normalize
 
 
-class SpatioTemporalProjector(nn.Module):
+class SpatioTemporalFeatureExtractor(nn.Module):
     def __init__(self, batch_size, time_feat_dim, 
                     time_scaling_factor, mapped_feat_dim, 
                     road_graph_node_vec=None, 
@@ -49,7 +49,7 @@ class SpatioTemporalProjector(nn.Module):
     
 # for convenience to switch different mlp models
 def get_st_proj(batch_size, time_feat_dim, time_scaling_factor, mapped_feat_dim, road_graph_node_vec, device, name):
-    st_mlp_proj = SpatioTemporalProjector(batch_size, time_feat_dim, time_scaling_factor, mapped_feat_dim, road_graph_node_vec, device) # default projector version
+    st_mlp_proj = SpatioTemporalFeatureExtractor(batch_size, time_feat_dim, time_scaling_factor, mapped_feat_dim, road_graph_node_vec, device) # default projector version
 
     st_proj_dict = {
         "MLP_emb": st_mlp_proj,
