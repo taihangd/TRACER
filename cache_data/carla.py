@@ -4,9 +4,10 @@ import pickle
 import numpy as np
 import re
 import os
+import torch
 import networkx as nx
-from node2vec import Node2Vec
-from gensim.models import KeyedVectors
+from torch_geometric.utils import from_networkx
+from torch_geometric.nn import Node2Vec
 from collections import defaultdict
 import sys
 sys.path.append(os.getcwd())
@@ -66,26 +67,42 @@ def gen_road_graph(road_graph_pkl_file, node_file, edge_file):
     
     return road_graph
 
-def gen_road_graph_node_emb(road_graph, road_graph_node_vec_file, node2vec_param):
+def gen_road_graph_node_emb(road_graph_node_vec_file, road_graph, node2vec_param, device):
     if not os.path.exists(road_graph_node_vec_file):
-        # precompute probabilities and generate walks
-        node2vec = Node2Vec(road_graph, 
-                            dimensions=node2vec_param['dimensions'], 
-                            walk_length=node2vec_param['walk_length'], 
-                            num_walks=node2vec_param['num_walks'], 
-                            workers=node2vec_param['workers'], 
-                            p=node2vec_param['p'], 
-                            q=node2vec_param['q'], 
-                            temp_folder=node2vec_param['temp_folder'], 
-                            seed=node2vec_param['seed'])
+        model = Node2Vec(from_networkx(road_graph).edge_index, 
+                         embedding_dim=node2vec_param['dimensions'],
+                         walk_length=node2vec_param['walk_length'],
+                        context_size=node2vec_param['context_size'],
+                        walks_per_node=node2vec_param['num_walks'],
+                        num_negative_samples=node2vec_param['num_negative_samples'],
+                        p=node2vec_param['p'],
+                        q=node2vec_param['q'],
+                        sparse=node2vec_param['sparse']).to(device)
+        
+        loader = model.loader(batch_size=node2vec_param['batch_size'], shuffle=node2vec_param['shuffle'], num_workers=node2vec_param['num_workers'])
+        optimizer = torch.optim.SparseAdam(list(model.parameters()), lr=node2vec_param['lr'])
+        
+        def train_node_emb():
+            model.train()
+            total_loss = 0
+            for pos_rw, neg_rw in loader:
+                optimizer.zero_grad()
+                loss = model.loss(pos_rw.to(device), neg_rw.to(device))
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            return total_loss / len(loader)
 
-        # embed nodes
-        node2vec_model = node2vec.fit(window=100, sg=1, min_count=1, epochs=10, batch_words=10000)
-        node2vec_model.save(road_graph_node_vec_file)
+        for epoch in range(node2vec_param['epochs']):
+            loss = train_node_emb()
+            print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
+
+        node_embs = model().detach().cpu() # get the node embedding
+        pickle.dump(node_embs, open(road_graph_node_vec_file, 'wb'))
     else:
-        node2vec_model = KeyedVectors.load(road_graph_node_vec_file)
+        node_embs = pickle.load(open(road_graph_node_vec_file, 'rb'))
 
-    return node2vec_model
+    return node_embs
 
 # generate correspondence between camera nodes and road nodes
 def gen_cam_dict(road_graph, cid_rid_correspondence_pkl_file, cam_nodes_file):
@@ -133,7 +150,7 @@ def gen_cam_dict(road_graph, cid_rid_correspondence_pkl_file, cam_nodes_file):
 
 
 if __name__ == "__main__":
-    dataset_config_file = "./config/carla.yaml"
+    dataset_config_file = "./config/carla_tracklets_self_train_time_slice_sampl.yaml"
     parser = argparse.ArgumentParser()
     config = yaml_config_hook(dataset_config_file)
     for k, v in config.items():
@@ -157,15 +174,22 @@ if __name__ == "__main__":
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
     
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # load node2vec parameters
-    node2vec_param = {"dimensions": args.node2vec['dimensions'], 
+    node2vec_param = {'dimensions': args.node2vec['dimensions'], 
                     'walk_length': args.node2vec['walk_length'], 
+                    'context_size': args.node2vec['context_size'], 
                     'num_walks': args.node2vec['num_walks'], 
-                    'workers': args.node2vec['workers'], 
+                    'num_negative_samples': args.node2vec['num_negative_samples'], 
                     'p': args.node2vec['p'], 
                     'q': args.node2vec['q'], 
-                    'temp_folder': args.node2vec['temp_folder'], 
-                    'seed': args.seed}
+                    'sparse': args.node2vec['sparse'], 
+                    'num_workers': args.node2vec['num_workers'], 
+                    'batch_size': args.node2vec['batch_size'], 
+                    'shuffle': args.node2vec['shuffle'], 
+                    'lr': args.node2vec['lr'], 
+                    'epochs': args.node2vec['epochs']}
 
     ## generate road graph in NetworkX type
     gen_road_graph_time = time.time()
@@ -175,7 +199,7 @@ if __name__ == "__main__":
 
     # generate road graph node embedding
     gen_road_graph_node_emb_time = time.time()
-    node2vec_model = gen_road_graph_node_emb(road_graph, road_graph_node_vec_file, node2vec_param)
+    node_embs = gen_road_graph_node_emb(road_graph_node_vec_file, road_graph, node2vec_param, device)
     gen_road_graph_node_emb_time = time.time() - gen_road_graph_node_emb_time
     print(f'generate road graph embedding successfully! consuming time: {gen_road_graph_node_emb_time}')
 

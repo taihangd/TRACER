@@ -2,6 +2,26 @@ import os
 import yaml
 
 
+def flatten_dict(d, parent_key='', sep='.'):
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def unflatten_dict(d, sep='.'):
+    result_dict = {}
+    for k, v in d.items():
+        keys = k.split(sep)
+        d = result_dict
+        for key in keys[:-1]:
+            d = d.setdefault(key, {})
+        d[keys[-1]] = v
+    return result_dict
+
 def yaml_config_hook(config_file):
     """
     Custom YAML config loader, which can include other yaml files (I like using config files
@@ -22,3 +42,4 @@ def yaml_config_hook(config_file):
         del cfg["defaults"]
 
     return cfg
+

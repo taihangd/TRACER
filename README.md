@@ -1,6 +1,10 @@
-# The official implementation of STRICK
+# The official implementation of TRACER
 
 ![Python 3.9.16](https://img.shields.io/badge/python-3.9.16-green.svg?style=plastic)
+
+This is the code for the paper:
+
+- Efficient and Accurate Cross Camera Trajectory Recovery.
 
 ## Requirements
 
@@ -35,53 +39,41 @@ There are the configuration files in "./config" folder, where one can edit and s
 
 ### code
 - cache_data folder
-  - The cache data and corresponding generation files.
+  - the cache data and corresponding generation files.
+- config folder
+  - the configuration file are saved here.
 - datasets folder
-  - The datasets classes files. If you want to test on your own datasets, try add the corresponding files here.
+  - datasets classes files. If you want to test on your own datasets, try add the corresponding files here.
 - modules folder
-  - The network structure and loss function files.
+  - network structure and loss function files.
+- universal_functions.py
+  - sampling, training, feature extraction functions, etc.
 - cluster.py
-  - our clustering algorithm.
+  - ours Clustering algorithm.
 - eval.py
   - evaluation module.
-- self_train.py
-  - self-supervised training.
-- train.py
-  - supervised training.
-- test.py
-  - algorithm evaluation.
-- test_cluster.py
-  - evaluation for clustering modules.
-
+- self_train_stream_data_online_update.py
+  - network training module for streaming mode.
+- self_train_test_stream_data_online_update.py
+  - algorithm testing module for streaming mode.
+- self_train_time_slice_sampl.py
+  - network training module for batch mode.
+- self_train_test_time_slice_sampl.py
+  - algorithm testing module for batch mode.
 
 ## Cache Data Preparation
-Before training and evaluation, run the .py file in the "./cache_data" to generate cache data. 
+Before training and testing, run the .py file in the "./cache_data" to generation cache data. 
 
-## Training
-After setting the configuration, to start self-supervised training, simply run
+## Test
+After setting the configuration, to test in batch mode, simply run
 
-> python self_train.py
+> python self_train_time_slice_sampl.py
+> python self_train_test_time_slice_sampl.py
 
-to start supervised training, simply run
+After setting the configuration, to test in streaming mode, simply run
 
-> python train.py
-
-## Testing
-Once the training is completed, there will be a saved model in the "checkpoints" specified in the configuration file. 
-After setting the corresponding configuration file, you can run
-
-> python test.py
-
-or simply run
-
-> python test_cluster.py --select_cluster "Strick"
+> python self_train_stream_data_online_update.py
+> python self_train_test_stream_data_online_update.py
 
 ## Dataset
 Please download from our [repository](https://terabox.com/s/1BUll52ghFXuseGRaev-ElA). 
-
-
-<!-- ## Citation
-If you find this repository useful in your research, please consider citing the following paper:
-```
-
-``` -->
