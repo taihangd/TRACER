@@ -67,13 +67,17 @@ Before training and testing, run the .py file in the "./cache_data" to generatio
 ## Test
 After setting the configuration, to test in batch mode, simply run
 
-> python self_train_time_slice_sampl.py
-> python self_train_test_time_slice_sampl.py
+```bash
+python self_train_time_slice_sampl.py
+python self_train_test_time_slice_sampl.py
+```
 
 After setting the configuration, to test in streaming mode, simply run
 
-> python self_train_stream_data_online_update.py
-> python self_train_test_stream_data_online_update.py
+```bash
+python self_train_stream_data_online_update.py
+python self_train_test_stream_data_online_update.py
+```
 
 ## Dataset
 Please download from our [repository](https://terabox.com/s/1BUll52ghFXuseGRaev-ElA). 
