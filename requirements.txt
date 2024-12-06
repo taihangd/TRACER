@@ -1,0 +1,10 @@
+faiss-gpu==1.7.2
+gensim==4.3.1
+matplotlib==3.7.2
+networkx==2.8.8
+node2vec==0.4.6
+numpy==1.24.3
+pyproj==3.6.0
+PyYAML==6.0.1
+torch==2.0.1
+tqdm==4.65.0
